@@ -112,6 +112,8 @@ find_package(SDL3 REQUIRED CONFIG)
 sb_test(settings_keys_test SOURCES ${RT}/user/settings.cpp)
 target_link_libraries(settings_keys_test PRIVATE SDL3::SDL3)
 target_include_directories(settings_keys_test SYSTEM PRIVATE ${ROOT}/tools/XenonRecomp/thirdparty/tomlplusplus/include)
+# The keyboard's controls and how held keys become a pad (hid/key_map.h), header only.
+sb_test(key_map_test)
 # Check for Updates' logic: versions, GitHub's JSON, curl's output and the
 # release notes (update/check.cpp, self-contained).
 sb_test(update_check_test SOURCES ${RT}/update/check.cpp)
