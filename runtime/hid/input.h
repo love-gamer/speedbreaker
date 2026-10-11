@@ -8,9 +8,12 @@
 //     sticks rest at exactly zero while small movements still ramp up
 //     smoothly from the edge of the deadzone. Triggers get their own
 //     (NFSMW_TRIGGER_DEADZONE, default 0.02).
-//   - Keyboard: arrows = D-pad + left stick, W/S = gas/brake (RT/LT), A/D =
-//     steer, Space = A, Backspace = B, Left Shift = X, Left Ctrl = Y,
-//     Q/E = LB/RB, Enter = START, Esc = BACK, C = right stick click.
+//   - Keyboard: each Xbox 360 control has a key (Settings > Controls; the
+//     [keys] table of settings.toml; hid/key_map.h lists them). Defaults:
+//     arrows = D-pad, A/D = steer, Up/Down = left stick too, W/S = gas/brake
+//     (RT/LT), Space = A, Backspace = B, Left Shift = X, Left Ctrl = Y,
+//     Q/E = LB/RB, Enter = START, Esc = BACK, O/L/K/; = right stick,
+//     Z/C = the stick clicks. One key per control; a key may drive several.
 //   - NFSMW_INPUT_SCRIPT="12:START,15.5:A,30-90/4:DOWN,100~160:RT": taps
 //     (150 ms) at seconds since launch, taps every `step` seconds over a
 //     range, or inputs held over a range; RT/LT (triggers) and LL/LR/LU/LD
