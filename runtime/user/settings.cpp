@@ -27,6 +27,8 @@
 #include <TargetConditionals.h>  // TARGET_OS_IOS: __APPLE__ alone means macOS or iOS
 #endif
 
+#include <SDL3/SDL_keyboard.h>  // the Key options: scancodes and their names
+
 // toml++ (header-only), as vendored by XenonRecomp. The fallback path keeps
 // this file building before runtime/CMakeLists.txt adds the include
 // directory (the runtime globs every .cpp under runtime/).
@@ -103,6 +105,16 @@ namespace settings
             { 16, "16x", "16x" },
             { kAnisotropyGame, "game", "Original" },
         };
+
+        // A Controls row: the key (as an SDL scancode) that drives one Xbox
+        // 360 control. No environment variable: 24 of them would clutter
+        // the file's comments for nobody.
+        constexpr Option KeyOption(Id id, const char* key, const char* label, const char* description, SDL_Scancode scancode)
+        {
+            return { .id = id, .category = Category::Controls, .type = Type::Key, .apply = Apply::Live,
+                     .table = "keys", .key = key, .label = label, .description = description, .env = nullptr,
+                     .defaultValue = double(scancode) };
+        }
 
         // Defaults are what the runtime did before settings existed, so an
         // empty settings.toml changes nothing.
@@ -186,6 +198,31 @@ namespace settings
               .table = "input", .key = "vibration", .label = "Vibration",
               .description = "Controller rumble.",
               .env = "NFSMW_VIBRATION", .defaultValue = 1 },
+            // Controls (Settings > Controls; hid/key_map.h reads them)
+            KeyOption(Id::KeyRightTrigger, "right_trigger", "Right Trigger", "Gas in the game's default layout.", SDL_SCANCODE_W),
+            KeyOption(Id::KeyLeftTrigger, "left_trigger", "Left Trigger", "Brake and reverse in the game's default layout.", SDL_SCANCODE_S),
+            KeyOption(Id::KeyLeftStickLeft, "left_stick_left", "Left Stick Left", "Steer left.", SDL_SCANCODE_A),
+            KeyOption(Id::KeyLeftStickRight, "left_stick_right", "Left Stick Right", "Steer right.", SDL_SCANCODE_D),
+            KeyOption(Id::KeyLeftStickUp, "left_stick_up", "Left Stick Up", "The left stick pushed up (menus; the camera in some views).", SDL_SCANCODE_UP),
+            KeyOption(Id::KeyLeftStickDown, "left_stick_down", "Left Stick Down", "The left stick pulled down.", SDL_SCANCODE_DOWN),
+            KeyOption(Id::KeyA, "a", "A", "The A button.", SDL_SCANCODE_SPACE),
+            KeyOption(Id::KeyB, "b", "B", "The B button.", SDL_SCANCODE_BACKSPACE),
+            KeyOption(Id::KeyX, "x", "X", "The X button.", SDL_SCANCODE_LSHIFT),
+            KeyOption(Id::KeyY, "y", "Y", "The Y button.", SDL_SCANCODE_LCTRL),
+            KeyOption(Id::KeyLB, "lb", "LB", "The left shoulder button.", SDL_SCANCODE_Q),
+            KeyOption(Id::KeyRB, "rb", "RB", "The right shoulder button.", SDL_SCANCODE_E),
+            KeyOption(Id::KeyDpadUp, "dpad_up", "D-pad Up", "The D-pad, up.", SDL_SCANCODE_UP),
+            KeyOption(Id::KeyDpadDown, "dpad_down", "D-pad Down", "The D-pad, down.", SDL_SCANCODE_DOWN),
+            KeyOption(Id::KeyDpadLeft, "dpad_left", "D-pad Left", "The D-pad, left.", SDL_SCANCODE_LEFT),
+            KeyOption(Id::KeyDpadRight, "dpad_right", "D-pad Right", "The D-pad, right.", SDL_SCANCODE_RIGHT),
+            KeyOption(Id::KeyStart, "start", "Start", "Start: pause.", SDL_SCANCODE_RETURN),
+            KeyOption(Id::KeyBack, "back", "Back", "Back.", SDL_SCANCODE_ESCAPE),
+            KeyOption(Id::KeyRightStickUp, "right_stick_up", "Right Stick Up", "The right stick pushed up.", SDL_SCANCODE_O),
+            KeyOption(Id::KeyRightStickDown, "right_stick_down", "Right Stick Down", "The right stick pulled down.", SDL_SCANCODE_L),
+            KeyOption(Id::KeyRightStickLeft, "right_stick_left", "Right Stick Left", "The right stick pushed left.", SDL_SCANCODE_K),
+            KeyOption(Id::KeyRightStickRight, "right_stick_right", "Right Stick Right", "The right stick pushed right.", SDL_SCANCODE_SEMICOLON),
+            KeyOption(Id::KeyLeftStickClick, "left_stick_click", "Left Stick Click", "Pressing the left stick in.", SDL_SCANCODE_Z),
+            KeyOption(Id::KeyRightStickClick, "right_stick_click", "Right Stick Click", "Pressing the right stick in.", SDL_SCANCODE_C),
             // Advanced
             { .id = Id::AsyncShaders, .category = Category::Advanced, .type = Type::Bool, .apply = Apply::Live,
               .table = "advanced", .key = "async_shaders", .label = "Asynchronous Shaders",
@@ -223,7 +260,10 @@ namespace settings
                     if (!found)
                         return false;
                 }
-                if (o.env == nullptr || o.label == nullptr || o.description == nullptr)
+                if (o.type == Type::Key && !(o.defaultValue >= 1 && o.defaultValue < double(SDL_SCANCODE_COUNT) && o.min == 0 && o.max == 0 &&
+                                             o.step == 0 && o.entries.empty() && !o.hidden))
+                    return false;
+                if ((o.env == nullptr) != (o.type == Type::Key) || o.label == nullptr || o.description == nullptr)
                     return false;
             }
             return true;
@@ -560,6 +600,8 @@ namespace settings
         {
             const Option& o = kOptions[i];
             s_envSet[i].store(false, std::memory_order_relaxed);
+            if (!o.env)
+                return;  // a Key option: the file alone
             const char* v = std::getenv(o.env);
             if (!v)
                 return;
@@ -718,8 +760,8 @@ namespace settings
             std::string out =
                 "# SpeedBreaker settings, written by the game's settings menu. Hand edits\n"
                 "# are fine while the game is closed; unknown keys are dropped on the next\n"
-                "# save. The environment variable after each option overrides it for one\n"
-                "# run without changing this file.\n";
+                "# save. The environment variable after an option overrides it for one run\n"
+                "# without changing this file.\n";
             const char* table = "";
             for (size_t i = 0; i < kCount; i++)
             {
@@ -733,8 +775,8 @@ namespace settings
                     out += "\n";
                 std::string range = RangeText(o);
                 range[0] = char(std::toupper(uint8_t(range[0])));
-                out += std::format("# {}: {}\n# {}. ({}{})\n", o.label, o.description, range, o.env,
-                    o.apply == Apply::Restart ? "; applies at the next launch" : "");
+                std::string override = o.env ? std::format(" ({}{})", o.env, o.apply == Apply::Restart ? "; applies at the next launch" : "") : "";
+                out += std::format("# {}: {}\n# {}.{}\n", o.label, o.description, range, override);
                 out += std::format("{} = {}\n", o.key, TomlValue(o, values[i]));
             }
             std::string lastVersion;
@@ -923,6 +965,7 @@ namespace settings
         case Category::Graphics: return "Graphics";
         case Category::Audio: return "Audio";
         case Category::Input: return "Input";
+        case Category::Controls: return "Controls";
         case Category::Advanced: return "Advanced";
         default: return "";
         }

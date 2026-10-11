@@ -14,7 +14,8 @@
 //     that runs before main() calls Load(), so it would miss the file (it
 //     gets the environment and defaults, with a warning in the log).
 //   - An environment variable (NFSMW_AA=0, ...) wins over the file for that
-//     run and is never written back; EnvOverride() tells the menu.
+//     run and is never written back; EnvOverride() tells the menu. Key
+//     options have none.
 //   - A Restart option keeps its launch value for the whole run. Its
 //     consumers read it once (the window's size), so a change mid-run would
 //     reach only part of them. The menu edits the stored value and shows
@@ -60,6 +61,32 @@ namespace settings
         StickDeadzone,
         TriggerDeadzone,
         Vibration,
+        // Controls (the [keys] table): the keyboard key that drives each
+        // Xbox 360 control, as an SDL scancode (hid/key_map.h). Page order.
+        KeyRightTrigger,
+        KeyLeftTrigger,
+        KeyLeftStickLeft,
+        KeyLeftStickRight,
+        KeyLeftStickUp,
+        KeyLeftStickDown,
+        KeyA,
+        KeyB,
+        KeyX,
+        KeyY,
+        KeyLB,
+        KeyRB,
+        KeyDpadUp,
+        KeyDpadDown,
+        KeyDpadLeft,
+        KeyDpadRight,
+        KeyStart,
+        KeyBack,
+        KeyRightStickUp,
+        KeyRightStickDown,
+        KeyRightStickLeft,
+        KeyRightStickRight,
+        KeyLeftStickClick,
+        KeyRightStickClick,
         // Advanced
         AsyncShaders,
         PerformanceOverlay,
@@ -67,8 +94,10 @@ namespace settings
     };
     constexpr size_t kCount = size_t(Id::Count);
 
-    enum class Type : uint8_t { Bool, Int, Float, Enum };
-    enum class Category : uint8_t { Display, Graphics, Audio, Input, Advanced, Count };
+    // Key: an SDL scancode (the key's position, 1 to 511), saved as SDL's
+    // name of it ("W", "Left Shift"); the menu takes it from a key press.
+    enum class Type : uint8_t { Bool, Int, Float, Enum, Key };
+    enum class Category : uint8_t { Display, Graphics, Audio, Input, Controls, Advanced, Count };
     enum class Apply : uint8_t { Live, Restart };
 
     // Values of the enum options (GetInt returns them).
@@ -109,7 +138,7 @@ namespace settings
         const char* key;          // key in that table, e.g. "anti_aliasing"
         const char* label;        // menu label
         const char* description;  // one-line menu help
-        const char* env;          // the environment variable that overrides it
+        const char* env;          // the environment variable that overrides it; nullptr: none (Key options)
         int envField = 0;         // 0: the whole variable; n: its n-th 'x'-separated field (NFSMW_WINDOW=WxH)
         double defaultValue;      // Bool: 0 or 1; Enum: an entry's value
         // Int and Float: the range and the menu's step. Enum: the range a

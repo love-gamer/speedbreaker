@@ -105,6 +105,13 @@ sb_test(memory_status_test SOURCES ${RT}/kernel/memory_status.cpp ${RT}/platform
 # The version line in the log, and when the "What's new" note shows
 # (user/version_check.h, header only).
 sb_test(version_check_test)
+# The Key options (Settings > Controls): the table, the [keys] names in the
+# file, and what Set accepts (user/settings.cpp, which needs SDL3 for the
+# scancode names and the toml++ XenonRecomp vendors).
+find_package(SDL3 REQUIRED CONFIG)
+sb_test(settings_keys_test SOURCES ${RT}/user/settings.cpp)
+target_link_libraries(settings_keys_test PRIVATE SDL3::SDL3)
+target_include_directories(settings_keys_test SYSTEM PRIVATE ${ROOT}/tools/XenonRecomp/thirdparty/tomlplusplus/include)
 # Check for Updates' logic: versions, GitHub's JSON, curl's output and the
 # release notes (update/check.cpp, self-contained).
 sb_test(update_check_test SOURCES ${RT}/update/check.cpp)
