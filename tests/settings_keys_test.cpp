@@ -91,6 +91,83 @@ int main()
     CHECK(size_t(Id::AsyncShaders) == previous + 1, "Advanced follows the keys");
     CHECK(EnvOverride(Id::KeyA) == nullptr, "nothing overrides a key");
 
+    // The file: names in, in any case; anything else keeps the default.
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "speedbreaker-settings-keys-test";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    std::filesystem::path file = dir / "settings.toml";
+    {
+        std::ofstream f(file);
+        f << "[keys]\n"
+             "right_trigger = \"Up\"\n"
+             "left_trigger = \"Keypad 1\"\n"
+             "right_stick_left = \"k\"\n"
+             "right_stick_up = \"left shift\"\n"
+             "a = \"Not A Key\"\n"
+             "b = 42\n"
+             "x = true\n"
+             "y = \"\"\n";
+    }
+    CHECK(Load(file), "loads: %s", LastError().c_str());
+    CHECK(GetInt(Id::KeyRightTrigger) == SDL_SCANCODE_UP, "\"Up\": %d", GetInt(Id::KeyRightTrigger));
+    CHECK(GetInt(Id::KeyLeftTrigger) == SDL_SCANCODE_KP_1, "a two-word name: %d", GetInt(Id::KeyLeftTrigger));
+    CHECK(GetInt(Id::KeyRightStickLeft) == SDL_SCANCODE_K, "\"k\" is K: %d", GetInt(Id::KeyRightStickLeft));
+    CHECK(GetInt(Id::KeyRightStickUp) == SDL_SCANCODE_LSHIFT, "\"left shift\" is Left Shift: %d", GetInt(Id::KeyRightStickUp));
+    CHECK(GetInt(Id::KeyA) == SDL_SCANCODE_SPACE, "an unknown name keeps the default");
+    CHECK(GetInt(Id::KeyB) == SDL_SCANCODE_BACKSPACE, "a number keeps the default");
+    CHECK(GetInt(Id::KeyX) == SDL_SCANCODE_LSHIFT, "a boolean keeps the default");
+    CHECK(GetInt(Id::KeyY) == SDL_SCANCODE_LCTRL, "an empty name keeps the default");
+    CHECK(GetInt(Id::KeyLB) == SDL_SCANCODE_Q, "a missing key keeps the default");
+    CHECK(IsDefault(Id::KeyLB) && !IsDefault(Id::KeyRightTrigger), "IsDefault follows the file");
+
+    // Shown and logged as SDL's name of the position.
+    CHECK(FormatValue(Id::KeyRightTrigger, GetValue(Id::KeyRightTrigger)) == "Up", "FormatValue: %s",
+        FormatValue(Id::KeyRightTrigger, GetValue(Id::KeyRightTrigger)).c_str());
+    CHECK(FormatValue(Id::KeyX, double(SDL_SCANCODE_LSHIFT)) == "Left Shift", "a two-word name");
+    CHECK(FormatValue(Id::KeyA, 0) == "?" && FormatValue(Id::KeyA, 1e9) == "?" && FormatValue(Id::KeyA, NAN) == "?" &&
+        FormatValue(Id::KeyA, 1) == "?", "not a key: ?");
+
+    // Set: a scancode with a name, or nothing happens.
+    CHECK(Set(Id::KeyA, SDL_SCANCODE_RETURN) == SetResult::Applied, "a key");
+    CHECK(Set(Id::KeyA, SDL_SCANCODE_RETURN) == SetResult::Unchanged, "the same key again");
+    CHECK(Set(Id::KeyA, 0) == SetResult::Invalid, "0 (SDL_SCANCODE_UNKNOWN) isn't a key");
+    CHECK(Set(Id::KeyA, SDL_SCANCODE_COUNT) == SetResult::Invalid, "past the end");
+    CHECK(Set(Id::KeyA, SDL_SCANCODE_RETURN + 0.5) == SetResult::Invalid, "not a whole number");
+    CHECK(Set(Id::KeyA, 1) == SetResult::Invalid, "scancode 1 has no name");
+    CHECK(Set(Id::KeyA, NAN) == SetResult::Invalid, "NaN");
+    CHECK(GetInt(Id::KeyA) == SDL_SCANCODE_RETURN, "invalid sets change nothing: %d", GetInt(Id::KeyA));
+    CHECK(StepValue(Id::KeyA, SDL_SCANCODE_RETURN, 1) == SDL_SCANCODE_RETURN &&
+        StepValue(Id::KeyA, SDL_SCANCODE_RETURN, -1) == SDL_SCANCODE_RETURN, "Left and Right do nothing to a key");
+    CHECK(!IsDefault(Id::KeyA) && Reset(Id::KeyA) == SetResult::Applied && IsDefault(Id::KeyA) && GetInt(Id::KeyA) == SDL_SCANCODE_SPACE, "Reset");
+
+    // Save: every key by name, the comment, no environment variable; and
+    // what it wrote loads back.
+    CHECK(Save(file), "saves: %s", LastError().c_str());
+    std::string text;
+    {
+        std::ifstream f(file);
+        std::stringstream s;
+        s << f.rdbuf();
+        text = s.str();
+    }
+    size_t at = text.find("\n[keys]\n"), advanced = text.find("\n[advanced]\n");
+    CHECK(at != std::string::npos && advanced != std::string::npos && at < advanced, "[keys] before [advanced]");
+    std::string section = at == std::string::npos ? "" : text.substr(at, advanced == std::string::npos ? std::string::npos : advanced - at);
+    CHECK(section.find("right_trigger = \"Up\"\n") != std::string::npos, "saved as its name");
+    CHECK(section.find("left_trigger = \"Keypad 1\"\n") != std::string::npos, "a two-word name, quoted");
+    CHECK(section.find("right_stick_left = \"K\"\n") != std::string::npos, "SDL's spelling, not the file's");
+    CHECK(section.find("right_stick_right = \";\"\n") != std::string::npos, "punctuation in a name is quoted as it is");
+    CHECK(section.find("right_stick_up = \"Left Shift\"\n") != std::string::npos, "SDL's case, not the file's");
+    CHECK(section.find("left_stick_click = \"Z\"\n") != std::string::npos, "a default is written too");
+    CHECK(section.find("# A key name as SDL spells it") != std::string::npos, "the comment says what goes here");
+    CHECK(section.find("NFSMW_") == std::string::npos, "no environment variable on a key");
+    CHECK(text.find("(NFSMW_VIBRATION)") != std::string::npos, "the other options keep theirs");
+    CHECK(Load(file), "loads what it saved: %s", LastError().c_str());
+    CHECK(GetInt(Id::KeyRightTrigger) == SDL_SCANCODE_UP && GetInt(Id::KeyLeftTrigger) == SDL_SCANCODE_KP_1 &&
+        GetInt(Id::KeyRightStickUp) == SDL_SCANCODE_LSHIFT, "round trip");
+    CHECK(!Dirty(), "nothing changed since the save");
+    std::filesystem::remove_all(dir);
+
     printf("%s (%d failures)\n", g_failures ? "FAILED" : "passed", g_failures);
     return g_failures ? 1 : 0;
 }

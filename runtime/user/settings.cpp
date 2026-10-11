@@ -460,6 +460,13 @@ namespace settings
                 if (const EnumEntry* e = FindEntry(o, v))
                     return double(e->value);
                 return {};
+            case Type::Key:
+                // A scancode SDL has a name for: the file holds the name.
+                if (!(v >= 1 && v < double(SDL_SCANCODE_COUNT)) || v != std::floor(v))
+                    return {};
+                if (SDL_GetScancodeName(SDL_Scancode(int(v)))[0] == '\0')
+                    return {};
+                return v;
             }
             return {};
         }
@@ -484,6 +491,8 @@ namespace settings
                     text += std::format(", or a number from {} to {}", o.min, o.max);
                 return text;
             }
+            case Type::Key:
+                return "a key name as SDL spells it (\"W\", \"Left Shift\", \"Return\", \"Keypad 1\")";
             }
             return "";
         }
@@ -506,6 +515,10 @@ namespace settings
                     return double(e->value);
                 if (auto n = ParseNumber(text))
                     return EnumFromNumber(o, *n);
+                return {};
+            case Type::Key:
+                if (SDL_Scancode sc = SDL_GetScancodeFromName(std::string(text).c_str()); sc != SDL_SCANCODE_UNKNOWN)
+                    return double(sc);
                 return {};
             }
             return {};
@@ -535,6 +548,8 @@ namespace settings
                 return n;
             case Type::Enum:
                 return EnumFromNumber(o, *n);
+            case Type::Key:
+                return {};  // names only
             }
             return {};
         }
@@ -751,6 +766,13 @@ namespace settings
                 if (const EnumEntry* e = FindEntry(o, Default(size_t(o.id))))
                     return std::format("\"{}\"", e->token);
                 return std::format("\"{}\"", FindEntry(o, o.defaultValue)->token);
+            case Type::Key:
+            {
+                const char* name = v >= 1 && v < double(SDL_SCANCODE_COUNT) ? SDL_GetScancodeName(SDL_Scancode(int(v))) : "";
+                if (name[0] == '\0')
+                    name = SDL_GetScancodeName(SDL_Scancode(int(o.defaultValue)));
+                return std::format("\"{}\"", name);
+            }
             }
             return "";
         }
@@ -1103,6 +1125,8 @@ namespace settings
             double index = delta > 0 ? std::floor(position) + delta : delta < 0 ? std::ceil(position) + delta : position;
             return *Normalize(o, o.min + index * o.step);  // not NaN: v and step are finite
         }
+        case Type::Key:
+            return value;  // a key has no neighbour: the menu takes a key press instead
         }
         return value;
     }
@@ -1119,6 +1143,13 @@ namespace settings
             if (const EnumEntry* e = FindEntry(o, value))
                 return e->label;
             return "?";
+        case Type::Key:
+        {
+            if (!(value >= 1 && value < double(SDL_SCANCODE_COUNT)))
+                return "?";
+            const char* name = SDL_GetScancodeName(SDL_Scancode(int(value)));
+            return name[0] ? name : "?";
+        }
         case Type::Int:
         case Type::Float:
             break;
