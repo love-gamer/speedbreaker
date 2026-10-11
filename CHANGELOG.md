@@ -4,6 +4,17 @@ What changed in each SpeedBreaker release, newest first. Each release's notes on
 its entry here, and the game shows the entry once, the first time a new version starts (offline:
 it's built into the game).
 
+## Unreleased
+
+### What's new
+
+- Settings > Controls: every keyboard key can be reassigned. Choose a row, press A or Enter,
+  then the new key. One key per control, and a key may drive several controls; *Reset page*
+  brings the defaults back. The keys are saved by name in settings.toml's `[keys]` table.
+- The right stick has keys: O / L up and down, K / ; left and right. The left stick click is Z.
+- Left and Right arrows no longer steer; A and D do. The arrows are still the D-pad, and Up and
+  Down still move the left stick. Settings > Controls brings arrow steering back if you prefer it.
+
 ## v0.1.2
 
 ### What's new
@@ -60,6 +71,7 @@ it's built into the game).
 - Updating keeps your saves, settings and the installed game, and needs no disc image: on a Mac,
   drag the new app into Applications and choose Replace, then Open Anyway once more; on SteamOS,
   unpack the new download over the old folder.
+
 
 ## v0.1.1
 

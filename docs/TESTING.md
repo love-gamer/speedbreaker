@@ -22,6 +22,8 @@ from you.
   buttons on either side of the screen).
 - The D-pad picks a row, left/right changes it, A selects, LB/RB switch
   pages, B closes. The game pauses while the menu is open.
+- The **Controls** page: choose a row, press A (or Enter), then the key you want; Esc cancels.
+  *Reset page* restores the default keys.
 
 ## When something goes wrong
 
