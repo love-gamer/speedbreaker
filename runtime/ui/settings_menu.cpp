@@ -35,6 +35,7 @@ namespace ui
         bool s_describedUpdate = false;     // ...or Check for Updates'
         bool s_opened = true;        // just opened: take focus
         Id s_capturing = Id::Count;  // a Controls row waiting for a key (KeyRow; SettingsMenuTakesKey takes it)
+        SDL_Scancode s_takenKey = SDL_SCANCODE_UNKNOWN;  // the key a wait took, until its release (SettingsMenuTakesKey)
         constexpr const char* kPressAKey = "Press a key";
 
         constexpr int kCategories = int(Category::Count);
@@ -511,6 +512,10 @@ namespace ui
         s_describedUpdate = false;
         if (s_capturing != Id::Count && settings::Info(s_capturing).category != s_category)
             s_capturing = Id::Count;
+        // For the B check at the end: B's nav cancel (in ImGui's NewFrame,
+        // before this) takes the waiting row's focus, and KeyRow then ends
+        // the wait before that check could see it.
+        const bool wasCapturing = s_capturing != Id::Count;
         if (ImGui::BeginTabBar("pages", ImGuiTabBarFlags_NoTooltip))
         {
             for (int c = 0; c < kCategories; c++)
@@ -655,13 +660,15 @@ namespace ui
         }
         if (DrawUpdateDialog())
             popup = true;
-        // B (or Esc) closes the menu; while a Controls row waits for a key
-        // it ends the wait instead. (The Esc key itself never gets here
-        // then: SettingsMenuTakesKey took its press.)
+        // B (or Esc) closes the menu; while a Controls row was waiting for
+        // a key at the top of this frame it ends the wait instead (the
+        // cursor goes with it, as after the Reset dialog: the next D-pad
+        // press brings it back). The Esc key itself never gets here then:
+        // SettingsMenuTakesKey took its press.
         if (!popup && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() &&
             (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
         {
-            if (s_capturing != Id::Count)
+            if (wasCapturing)
                 s_capturing = Id::Count;
             else
                 CloseSettings();
@@ -673,6 +680,7 @@ namespace ui
     {
         s_opened = true;
         s_capturing = Id::Count;  // a wait the menu was closed under is over
+        s_takenKey = SDL_SCANCODE_UNKNOWN;
         // A dialog the menu was closed under (Start or Back alone closes it
         // from anywhere) doesn't come back with it.
         if (ImGuiContext* g = ImGui::GetCurrentContext(); g && g->OpenPopupStack.Size > 0)
@@ -682,10 +690,23 @@ namespace ui
 
     bool SettingsMenuTakesKey(const SDL_KeyboardEvent& key)
     {
+        // The key a wait took stays down a moment longer. ImGui never saw
+        // it go down, so its OS repeats would read as fresh presses (Enter
+        // would start a new wait, an arrow would move the cursor): they and
+        // its release stay out of ImGui too.
+        if (s_takenKey != SDL_SCANCODE_UNKNOWN && key.scancode == s_takenKey)
+        {
+            if (!key.down)
+                s_takenKey = SDL_SCANCODE_UNKNOWN;
+            if (!key.down || key.repeat)
+                return true;
+            s_takenKey = SDL_SCANCODE_UNKNOWN;  // pressed anew: its release went by unseen
+        }
         if (s_capturing == Id::Count || !key.down || key.repeat)
             return false;
         const settings::Option& o = settings::Info(s_capturing);
         s_capturing = Id::Count;
+        s_takenKey = key.scancode;
         if (key.scancode == SDL_SCANCODE_ESCAPE)
         {
             fprintf(stderr, "[settings] menu: %s.%s: no new key (Esc)\n", o.table, o.key);
