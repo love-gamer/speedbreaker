@@ -132,12 +132,12 @@ int main()
     CHECK(Set(Id::KeyA, SDL_SCANCODE_RETURN) == SetResult::Unchanged, "the same key again");
     CHECK(Set(Id::KeyA, 0) == SetResult::Invalid, "0 (SDL_SCANCODE_UNKNOWN) isn't a key");
     CHECK(Set(Id::KeyA, SDL_SCANCODE_COUNT) == SetResult::Invalid, "past the end");
-    CHECK(Set(Id::KeyA, SDL_SCANCODE_RETURN + 0.5) == SetResult::Invalid, "not a whole number");
+    CHECK(Set(Id::KeyA, double(SDL_SCANCODE_RETURN) + 0.5) == SetResult::Invalid, "not a whole number");
     CHECK(Set(Id::KeyA, 1) == SetResult::Invalid, "scancode 1 has no name");
     CHECK(Set(Id::KeyA, NAN) == SetResult::Invalid, "NaN");
     CHECK(GetInt(Id::KeyA) == SDL_SCANCODE_RETURN, "invalid sets change nothing: %d", GetInt(Id::KeyA));
-    CHECK(StepValue(Id::KeyA, SDL_SCANCODE_RETURN, 1) == SDL_SCANCODE_RETURN &&
-        StepValue(Id::KeyA, SDL_SCANCODE_RETURN, -1) == SDL_SCANCODE_RETURN, "Left and Right do nothing to a key");
+    CHECK(StepValue(Id::KeyA, SDL_SCANCODE_RETURN, 1) == double(SDL_SCANCODE_RETURN) &&
+        StepValue(Id::KeyA, SDL_SCANCODE_RETURN, -1) == double(SDL_SCANCODE_RETURN), "Left and Right do nothing to a key");
     CHECK(!IsDefault(Id::KeyA) && Reset(Id::KeyA) == SetResult::Applied && IsDefault(Id::KeyA) && GetInt(Id::KeyA) == SDL_SCANCODE_SPACE, "Reset");
 
     // Save: every key by name, the comment, no environment variable; and
@@ -166,6 +166,26 @@ int main()
     CHECK(GetInt(Id::KeyRightTrigger) == SDL_SCANCODE_UP && GetInt(Id::KeyLeftTrigger) == SDL_SCANCODE_KP_1 &&
         GetInt(Id::KeyRightStickUp) == SDL_SCANCODE_LSHIFT, "round trip");
     CHECK(!Dirty(), "nothing changed since the save");
+
+    // Names TOML has to escape: SDL calls the backslash key "\" and the
+    // apostrophe key "'". Written raw, "\" would end the string early and
+    // the whole file would fail to parse at the next launch (every setting
+    // back to its default). They must save as a basic string and load back.
+    CHECK(Set(Id::KeyA, SDL_SCANCODE_BACKSLASH) == SetResult::Applied && Set(Id::KeyB, SDL_SCANCODE_APOSTROPHE) == SetResult::Applied,
+        "the backslash and apostrophe keys are keys");
+    CHECK(Save(file), "saves the escaped names: %s", LastError().c_str());
+    {
+        std::ifstream f(file);
+        std::stringstream s;
+        s << f.rdbuf();
+        text = s.str();
+    }
+    CHECK(text.find("\na = \"\\\\\"\n") != std::string::npos, "the backslash is escaped in the file");
+    CHECK(text.find("\nb = \"'\"\n") != std::string::npos, "the apostrophe needs no escape in a basic string");
+    CHECK(Load(file), "a file with a backslash key still parses: %s", LastError().c_str());
+    CHECK(GetInt(Id::KeyA) == SDL_SCANCODE_BACKSLASH && GetInt(Id::KeyB) == SDL_SCANCODE_APOSTROPHE,
+        "the backslash and apostrophe round-trip: %d %d", GetInt(Id::KeyA), GetInt(Id::KeyB));
+    CHECK(GetInt(Id::KeyRightTrigger) == SDL_SCANCODE_UP && GetInt(Id::MasterVolume) == 100, "and the rest of the file survived");
     std::filesystem::remove_all(dir);
 
     printf("%s (%d failures)\n", g_failures ? "FAILED" : "passed", g_failures);

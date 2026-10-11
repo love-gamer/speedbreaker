@@ -771,7 +771,16 @@ namespace settings
                 const char* name = v >= 1 && v < double(SDL_SCANCODE_COUNT) ? SDL_GetScancodeName(SDL_Scancode(int(v))) : "";
                 if (name[0] == '\0')
                     name = SDL_GetScancodeName(SDL_Scancode(int(o.defaultValue)));
-                return std::format("\"{}\"", name);
+                // A TOML basic string: SDL calls the backslash key "\", which
+                // written raw would end the string early and break the file.
+                std::string quoted = "\"";
+                for (const char* c = name; *c; c++)
+                {
+                    if (*c == '\\' || *c == '"')
+                        quoted += '\\';
+                    quoted += *c;
+                }
+                return quoted + "\"";
             }
             }
             return "";
