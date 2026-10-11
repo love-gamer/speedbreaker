@@ -572,6 +572,8 @@ namespace ui
                 s_settingsOpen ? CloseSettings() : OpenSettings();
                 return;
             }
+            if (s_settingsOpen && SettingsMenuTakesKey(e.key))
+                return;  // a Controls row took it: ImGui doesn't act on it too
             break;
         }
         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:

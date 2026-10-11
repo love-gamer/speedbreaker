@@ -130,6 +130,10 @@ namespace ui
     // Screens (settings_menu.cpp, perf_overlay.cpp, installer_screen.cpp).
     void DrawSettings();
     void ResetSettingsMenu();  // on opening: focus the first row, no dialog left open
+    // Main thread, from ProcessEvent on a key-down while the menu is open,
+    // after the F1 toggle: true when a Controls row was waiting for a key
+    // and took this one (or Esc cancelled it), so ImGui must not see it.
+    bool SettingsMenuTakesKey(const SDL_KeyboardEvent& key);
     void DrawPerfOverlay();
 
     // Settings > Advanced > Check for Updates (update_dialog.cpp, the check

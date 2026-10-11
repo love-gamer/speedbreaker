@@ -18,6 +18,7 @@
 
 #include <imgui.h>
 #include <imgui_internal.h>  // ClosePopupToLevel: a dialog left open when the menu closed
+#include <SDL3/SDL_keyboard.h>  // a key row's label on this layout
 
 namespace ui
 {
@@ -33,6 +34,8 @@ namespace ui
         bool s_describedBugReport = false;  // ...or Save Bug Report's
         bool s_describedUpdate = false;     // ...or Check for Updates'
         bool s_opened = true;        // just opened: take focus
+        Id s_capturing = Id::Count;  // a Controls row waiting for a key (KeyRow; SettingsMenuTakesKey takes it)
+        constexpr const char* kPressAKey = "Press a key";
 
         constexpr int kCategories = int(Category::Count);
 
@@ -51,6 +54,32 @@ namespace ui
             return delta;
         }
 
+        // A key row's label: the key's name on this keyboard's layout ("Z"
+        // on a French Mac for the position the file calls "W"), or SDL's
+        // name of the position when the layout has none. Main thread.
+        std::string KeyLabel(double stored)
+        {
+            if (!(stored >= 1 && stored < double(SDL_SCANCODE_COUNT)))
+                return "?";
+            SDL_Scancode sc = SDL_Scancode(int(stored));
+            const char* name = SDL_GetKeyName(SDL_GetKeyFromScancode(sc, SDL_KMOD_NONE, false));
+            if (!name || !name[0])
+                name = SDL_GetScancodeName(sc);
+            return name && name[0] ? name : "?";
+        }
+
+        // The other controls this row's key also drives ("D-pad Up, Left
+        // Stick Up"), in page order; "" when it is this row's alone.
+        std::string SharedWith(const settings::Option& o)
+        {
+            double key = settings::GetStoredValue(o.id);
+            std::string text;
+            for (const auto& other : settings::Options())
+                if (other.type == settings::Type::Key && other.id != o.id && settings::GetStoredValue(other.id) == key)
+                    text += (text.empty() ? "" : ", ") + std::string(other.label);
+            return text;
+        }
+
         // Widest value this option can show, for the value column.
         float ValueWidth(const settings::Option& o)
         {
@@ -65,6 +94,10 @@ namespace ui
             case settings::Type::Enum:
                 for (const auto& e : o.entries)
                     measure(e.value);
+                break;
+            case settings::Type::Key:
+                width = std::max(width, ImGui::CalcTextSize(KeyLabel(settings::GetStoredValue(o.id)).c_str()).x);
+                width = std::max(width, ImGui::CalcTextSize(kPressAKey).x);
                 break;
             default:
                 measure(o.min);
@@ -235,6 +268,57 @@ namespace ui
             ImGui::PopID();
         }
 
+        // A Controls row: the key that drives the control. A, Enter or a
+        // click waits for the next key, which SettingsMenuTakesKey takes
+        // from the event loop before ImGui sees it; the help line says so.
+        // No arrows: Left and Right do nothing to a key. The wait follows
+        // the focus (the D-pad moving on ends it) and B ends it (below, in
+        // DrawSettings, where B would otherwise close the menu).
+        void KeyRow(const settings::Option& o, float valueWidth, bool focus)
+        {
+            const float rowHeight = RowHeight();
+            const double stored = settings::GetStoredValue(o.id);
+            ImGui::PushID(int(o.id));
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, rowHeight);
+            ImGui::TableNextColumn();
+            if (focus)
+                ImGui::SetKeyboardFocusHere();
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + LabelInset());
+            ImVec2 labelPos = ImGui::GetCursorScreenPos();
+            bool activated = ImGui::Selectable("##row", false,
+                ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap, ImVec2(0, rowHeight));
+            bool focused = ImGui::IsItemFocused();
+            if (focused || (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlappedByItem) && s_described == Id::Count))
+                s_described = o.id;
+            const float mid = RowLabel(labelPos, o.label);
+            if (s_capturing == o.id && !focused)
+                s_capturing = Id::Count;
+            if (activated)
+                s_capturing = o.id;
+            const bool waiting = s_capturing == o.id;
+
+            // The value where other pages put theirs (the arrows' room kept
+            // so the columns line up from page to page).
+            ImGui::TableNextColumn();
+            float arrow = ImGui::GetFrameHeight();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (rowHeight - arrow) * 0.5f);
+            ImVec2 min = ImGui::GetCursorScreenPos();
+            ImGui::Dummy(ImVec2(valueWidth + arrow * 2, arrow));
+            std::string text = waiting ? kPressAKey : KeyLabel(stored);
+            ImVec2 size = ImGui::CalcTextSize(text.c_str());
+            ImU32 color;
+            if (waiting)
+            {
+                PushAccentText();
+                color = ImGui::GetColorU32(ImGuiCol_Text);
+                PopAccentText();
+            }
+            else
+                color = ImGui::GetColorU32(focused ? ImGuiCol_PlotLines : ImGuiCol_Text);
+            ImGui::GetWindowDrawList()->AddText(ImVec2(min.x + arrow + (valueWidth - size.x) * 0.5f, CentredTextTop(mid)), color, text.c_str());
+            ImGui::PopID();
+        }
+
         const char* BugReportValue()
         {
             switch (report::GetBugReportState())
@@ -334,7 +418,26 @@ namespace ui
                 return;
             }
             const settings::Option& o = settings::Info(s_described);
+            if (o.type == settings::Type::Key && s_capturing == o.id)
+            {
+                PushAccentText();
+                ImGui::Text("Press the key for %s. Esc cancels.", o.label);
+                PopAccentText();
+                ImGui::TextDisabled(" ");
+                return;
+            }
             ImGui::TextWrapped("%s", o.description);
+            if (o.type == settings::Type::Key)
+            {
+                // A key on several controls is fine (the defaults share the
+                // arrows); say which, in case it wasn't meant.
+                std::string also = SharedWith(o);
+                if (also.empty())
+                    ImGui::TextDisabled(" ");
+                else
+                    ImGui::TextDisabled("Also: %s.", also.c_str());
+                return;
+            }
             if (o.id == Id::Fullscreen && video::FullscreenLocked())
             {
                 ImGui::TextDisabled("Always on in Game Mode: Steam sets the resolution (Properties > Game Resolution).");
@@ -406,6 +509,8 @@ namespace ui
         s_described = Id::Count;
         s_describedBugReport = false;
         s_describedUpdate = false;
+        if (s_capturing != Id::Count && settings::Info(s_capturing).category != s_category)
+            s_capturing = Id::Count;
         if (ImGui::BeginTabBar("pages", ImGuiTabBarFlags_NoTooltip))
         {
             for (int c = 0; c < kCategories; c++)
@@ -462,7 +567,10 @@ namespace ui
                         for (const auto& o : settings::Options())
                             if (o.category == category && !o.hidden)
                             {
-                                OptionRow(o, valueWidth, focusFirst);
+                                if (o.type == settings::Type::Key)
+                                    KeyRow(o, valueWidth, focusFirst);
+                                else
+                                    OptionRow(o, valueWidth, focusFirst);
                                 focusFirst = false;
                             }
                         if (category == Category::Advanced)
@@ -516,7 +624,8 @@ namespace ui
             CloseSettings();
         ImGui::SameLine();
         {
-            const char* legend = "D-pad: choose, change   LB RB: page   B: close";
+            const char* legend = s_category == Category::Controls ? "D-pad: choose   A: change key   LB RB: page   B: close"
+                                                                 : "D-pad: choose, change   LB RB: page   B: close";
             float w = ImGui::CalcTextSize(legend).x;
             ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - w));
             ImGui::TextDisabled("%s", legend);
@@ -546,19 +655,44 @@ namespace ui
         }
         if (DrawUpdateDialog())
             popup = true;
+        // B (or Esc) closes the menu; while a Controls row waits for a key
+        // it ends the wait instead. (The Esc key itself never gets here
+        // then: SettingsMenuTakesKey took its press.)
         if (!popup && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() &&
             (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
-            CloseSettings();
+        {
+            if (s_capturing != Id::Count)
+                s_capturing = Id::Count;
+            else
+                CloseSettings();
+        }
         ImGui::End();
     }
 
     void ResetSettingsMenu()
     {
         s_opened = true;
+        s_capturing = Id::Count;  // a wait the menu was closed under is over
         // A dialog the menu was closed under (Start or Back alone closes it
         // from anywhere) doesn't come back with it.
         if (ImGuiContext* g = ImGui::GetCurrentContext(); g && g->OpenPopupStack.Size > 0)
             ImGui::ClosePopupToLevel(0, false);
         ForgetUpdateDialog();
+    }
+
+    bool SettingsMenuTakesKey(const SDL_KeyboardEvent& key)
+    {
+        if (s_capturing == Id::Count || !key.down || key.repeat)
+            return false;
+        const settings::Option& o = settings::Info(s_capturing);
+        s_capturing = Id::Count;
+        if (key.scancode == SDL_SCANCODE_ESCAPE)
+        {
+            fprintf(stderr, "[settings] menu: %s.%s: no new key (Esc)\n", o.table, o.key);
+            return true;
+        }
+        double from = settings::GetStoredValue(o.id);
+        LogChange(o, from, settings::Set(o.id, double(key.scancode)));
+        return true;
     }
 }
